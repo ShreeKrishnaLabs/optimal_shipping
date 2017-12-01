@@ -420,10 +420,13 @@ $resp = array();
       $data= drupal_json_decode($resp->data);
 
   if (isset($data['ratingResponse'])){
+              if (!isset($quotes['P']['rate'])) {
+            $quotes['P']['rate'] = 0;
+          }
     $totalCharge = $data['ratingResponse']['totalCharge'];
     $quotes['P']['rate'] += $totalCharge;
     $quotes['P']['label']= variable_get('uc_optimal_title','Optimal Ship')  . $totalCharge;
-    $quotes['P']['option_label'] = variable_get('uc_optimal_title','Optimal Ship')  .': '.theme('uc_ups_option_label', array('service' => $method['quote']['accessorials'][$key], 'packages' => count($quote)));
+    $quotes['P']['option_label'] = variable_get('uc_optimal_title','Optimal Ship')  .': '.theme('uc_optimal_option_label', array('service' => $method['quote']['accessorials']['P'], 'packages' => count($products)));
   }
   else {
     if (isset($data['errorResponse'])) {
