@@ -1,0 +1,469 @@
+<?php
+
+
+/**
+ * Optimal Ship
+ */
+
+
+/**
+ * Implements hook_menu().
+ */
+function uc_optimal_menu() {
+  $items = array();
+
+  $items['admin/store/settings/quotes/settings/optimal'] = array(
+    'title' => 'OPTIMAL',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('uc_optimal_admin_settings'),
+    'access arguments' => array('configure quotes'),
+    'type' => MENU_LOCAL_TASK,
+    'file' => 'uc_optimal.admin.inc',
+  );
+  $items['admin/store/orders/%uc_order/shipments/optimal'] = array(
+    'title' => 'Optimal shipment',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('uc_optimal_confirm_shipment', 3),
+    'access arguments' => array('fulfill orders'),
+    'file' => 'uc_optimal.ship.inc',
+  );
+  $items['admin/store/orders/%uc_order/shipments/labels/optimal'] = array(
+    'page callback' => 'theme',
+    'page arguments' => array('uc_optimal_label_image'),
+    'access arguments' => array('fulfill orders'),
+    'file' => 'uc_optimal.ship.inc',
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Deletes Optimal shipping labels from the file system automatically
+ * on a periodic basis.  Cron must be enabled for automatic deletion.
+ * Default is never delete the labels, keep them forever.
+ */
+function uc_optimal_cron() {
+  $cutoff = REQUEST_TIME - variable_get('uc_optimal_label_lifetime', 0);
+  if ($cutoff == REQUEST_TIME) {
+    // Label lifetime is set to 0, meaning never delete.
+    return;
+  }
+
+  // Loop over label files in public://ups_labels and test
+  // creation date against 'uc_ups_label_lifetime'.
+  $files = file_scan_directory('public://optimal_labels', '/^label-/');
+  foreach ($files as $file) {
+    if ($cutoff > filectime($file->uri)) {
+      drupal_unlink($file->uri);
+      watchdog('uc_optimal', 'Removed uc_optimal label file @file.', array('@file' => $file->uri), WATCHDOG_NOTICE);
+    }
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function uc_optimal_theme() {
+  return array(
+    'uc_optimal_option_label' => array(
+      'variables' => array(
+        'service'  => NULL,
+        'packages' => NULL,
+      ),
+      'file' => 'uc_optimal.theme.inc',
+    ),
+    'uc_optimal_confirm_shipment' => array(
+      'render element' => 'form',
+      'file' => 'uc_optimal.ship.inc',
+    ),
+    'uc_optimal_label_image' => array(
+      'variables' => array(),
+      'file' => 'uc_optimal.ship.inc',
+    ),
+  );
+}
+
+function uc_optimal_dis_en(&$form, &$form_state){
+  foreach($form_state['values'] as $k => $v){
+    if ($k =='uc_optimal_enable'){
+      variable_set($k,$v);
+      $quotes_enabled =    variable_get('uc_quote_enabled');
+      if ($quotes_enabled) {
+        if ($v){
+          drupal_set_message('Optimal Shipping Enabled');
+          $quotes_enabled['optimal'] = 1;
+          variable_set('uc_quote_enabled',$quotes_enabled);
+        }
+        else {
+          drupal_set_message('Optimal Shipping Disabled');
+          $quotes_enabled['optimal'] = 0;
+          variable_set('uc_quote_enabled',$quotes_enabled);
+        }
+      } 
+    }
+  }
+}
+function uc_optimal_quote_dis_en(&$form,&$form_state){
+  if (isset($form_state['values']['methods']['optimal'])){
+    if($form_state['values']['methods']['optimal']['uc_quote_enabled'] == 1){
+      variable_set('uc_optimal_enable',1);
+    }
+    else{
+      variable_set('uc_optimal_enable',0);
+    }
+  }
+}
+/**
+ * Implements hook_form_alter().
+ *
+ * Adds package type to products.
+ *
+ * @see uc_product_form()
+ * @see uc_optimal_product_alter_validate()
+ */
+function uc_optimal_form_alter(&$form, &$form_state, $form_id) {
+  if($form_id == 'uc_optimal_admin_settings'){
+    $form['#submit'][] = 'uc_optimal_dis_en';
+  }
+  if($form_id == 'uc_quote_method_settings'){
+    $form['#submit'][] = 'uc_optimal_quote_dis_en';
+
+  }
+ if (uc_product_is_product_form($form)) {
+    $node = $form['#node'];
+
+    $enabled = variable_get('uc_optimal_enable', array()) + array('optimal' => FALSE);
+    $weight = variable_get('uc_optimal_enable_dim_weights', array()) + array('optimal' => 0);
+
+    $optimal = array(
+      '#type' => 'fieldset',
+      '#title' => t('Optimal product description'),
+      '#collapsible' => TRUE,
+      '#collapsed' => ($enabled['optimal'] == FALSE || uc_product_get_shipping_type($node) != 'small_package'),
+      '#weight' => $weight['optimal'],
+      '#tree' => TRUE,
+    );
+    $ups['pkg_type'] = array(
+      '#type' => 'select',
+      '#title' => t('Package type'),
+      '#options' => _uc_optimal_pkg_types(),
+      '#default_value' => isset($node->optimal['pkg_type']) ? $node->optimal['pkg_type'] : variable_get('uc_optimal_pkg_type', 'P'),
+    );
+
+    $form['shipping']['optimal'] = $ups;
+    if ($enabled['optimal']) {
+      $form['#validate'][] = 'uc_optimal_product_alter_validate';
+    }
+  }
+}
+
+/**
+ * Validation handler for UPS product fields.
+ *
+ * @see uc_optimal_form_alter()
+ */
+function uc_optimal_product_alter_validate($form, &$form_state) {
+  if (isset($form_state['values']['shippable']) && ($form_state['values']['shipping_type'] == 'small_package' || (empty($form_state['values']['shipping_type']) && variable_get('uc_store_shipping_type', 'small_package') == 'small_package'))) {
+    //@todo check here
+    if ($form_state['values']['optimal']['pkg_type'] == 'P' && (empty($form_state['values']['dim_length']) || empty($form_state['values']['dim_width']) || empty($form_state['values']['dim_height']))) {
+      form_set_error('base][dimensions', t('Dimensions are required for custom packaging.'));
+    }
+  }
+}
+
+
+
+/**
+ * Implements hook_node_insert().
+ */
+function uc_optimal_node_insert($node) {
+  uc_optimal_node_update($node);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function uc_optimal_node_update($node) {
+  if (uc_product_is_product($node->type)) {
+    if (isset($node->optimal)) {
+      $optim_values = $node->optimal;
+      if (empty($node->revision)) {
+        db_delete('uc_optimal_products')
+          ->condition('vid', $node->vid)
+          ->execute();
+      }
+
+      db_insert('uc_optimal_products')
+        ->fields(array(
+          'vid' => $node->vid,
+          'nid' => $node->nid,
+          'pkg_type' => $ups_values['pkg_type'],
+        ))
+        ->execute();
+    }
+  }
+}
+
+/**
+ * Implements hook_node_load().
+ */
+function uc_optimal_node_load($nodes, $types) {
+  $product_types = array_intersect(uc_product_types(), $types);
+
+  if (empty($product_types)) {
+    return;
+  }
+
+  $vids = array();
+  $shipping_type = variable_get('uc_store_shipping_type', 'small_package');
+  $shipping_types = db_query("SELECT id, shipping_type FROM {uc_quote_shipping_types} WHERE id_type = :type AND id IN (:ids)", array(':type' => 'product', ':ids' => array_keys($nodes)))->fetchAllKeyed();
+
+  foreach ($nodes as $nid => $node) {
+    if (!in_array($node->type, $product_types)) {
+      continue;
+    }
+
+    if (isset($shipping_types[$nid])) {
+      $node->shipping_type = $shipping_types[$nid];
+    }
+    else {
+      $node->shipping_type = $shipping_type;
+    }
+
+    if ($node->shipping_type == 'small_package') {
+      $vids[$nid] = $node->vid;
+    }
+  }
+
+  if ($vids) {
+    $result = db_query("SELECT * FROM {uc_optimal_products} WHERE vid IN (:vids)", array(':vids' => $vids), array('fetch' => PDO::FETCH_ASSOC));
+    foreach ($result as $ups) {
+      $nodes[$ups['nid']]->ups = $ups;
+    }
+  }
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function uc_optimal_node_delete($node) {
+  db_delete('uc_optimal_products')
+    ->condition('nid', $node->nid)
+    ->execute();
+}
+
+/**
+ * Implements hook_node_revision_delete().
+ */
+function uc_optimal_node_revision_delete($node) {
+  db_delete('uc_optimal_products')
+    ->condition('vid', $node->vid)
+    ->execute();
+}
+
+
+
+
+
+/**
+ * Implements hook_uc_shipping_type().
+ */
+function uc_optimal_uc_shipping_type() {
+  $weight = variable_get('uc_quote_type_weight', array('small_package' => 0));
+
+  $types = array();
+  $types['small_package'] = array(
+    'id' => 'small_package',
+    'title' => t('Small packages'),
+    'weight' => $weight['small_package'],
+  );
+
+  return $types;
+}
+
+
+/**
+ * Implements hook_uc_shipping_method().
+ */
+function uc_optimal_uc_shipping_method() {
+  $methods['optimal'] = array(
+    'id' => 'optimal',
+    'module' => 'uc_optimal',
+    'title' => t('Optimal'),
+    'operations' => array(
+      'configure' => array(
+        'title' => t('configure'),
+        'href' => 'admin/store/settings/quotes/settings/optimal',
+      ),
+    ),
+    'quote' => array(
+      'type' => 'small_package',
+      'callback' => 'uc_optimal_quote',
+      'accessorials' => _uc_optimal_service_list(),
+    ),
+   );
+
+  return $methods;
+}
+
+/**
+ * Implements hook_uc_store_status().
+ *
+ * Lets the administrator know that the UPS account information has not been
+ * filled out.
+ */
+function uc_optimal_uc_store_status() {
+  $messages = array();
+
+  $access   = variable_get('uc_optimal_enable', '') != '';
+  $account  = variable_get('uc_optimal_acc', '') != '';
+
+  if ($access && $account ) {
+    $messages[] = array(
+      'status' => 'ok',
+      'title' => t('Optimal Online Tools'),
+      'desc' => t('Information needed to access Optimal Online Tools has been entered.'),
+    );
+  }
+  else {
+    $messages[] = array(
+      'status' => 'error',
+      'title' => t('Optimal Online Tools'),
+      'desc' => t('More information is needed to access Optimal Online Tools. Please enter it <a href="!url">here</a>.', array('!url' => url('admin/store/settings/quotes/settings/optimal'))),
+    );
+  }
+
+  return $messages;
+}
+
+/******************************************************************************
+ * Module Functions                                                           *
+ ******************************************************************************/
+
+
+
+/**
+ * Convenience function to get Optimal codes for their package types.
+ */
+function _uc_optimal_pkg_types() {
+  return array(
+  'P' => t('Express packages'), 
+  );
+}
+/**
+ * Callback for retrieving a Optimal shipping quote.
+ *
+ * Requests a quote for each enabled Optimal Service. Therefore, the quote will
+ * take longer to display to the user for each option the customer has
+ * available.
+ *
+ * @param $products
+ *   Array of cart contents.
+ * @param $details
+ *   Order details other than product information.
+ * @param $method
+ *   The shipping method to create the quote.
+ *
+ * @return
+ *   JSON object containing rate, error, and debugging information.
+ */
+function uc_optimal_quote($products, $details, $method) {
+  $destination = (object) $details;
+  $quotes = array();
+      if (empty($destination->zone)        ||
+      empty($destination->postal_code) ||
+      empty($destination->country)       ) {
+    // Skip this shipping method.
+    return array();
+  }
+   if (!empty($destination->country) && $destination->country == 840){
+     // Skip this shipping method.
+    drupal_set_message('International Shipping Only','error');
+     return array();
+   }
+  foreach($products as $k=>$v){
+    $acc = variable_get('uc_optimal_acc','');
+    // logic of converting country codes from drupal and merging into DHL list 
+      $query = db_select('uc_countries')
+      ->fields('uc_countries')
+      ->condition('country_id',$destination->country)
+      ->execute();
+      $country_id = $query->fetchAll();
+      $dst = $country_id[0]->country_iso_code_2;
+   //if dimensional weight is enabled
+       $weight=0;
+          $quantity = $v->qty;
+          for($i=0; $i< $quantity;$i++){
+            $weight = $weight + $v->weight * $quantity;                 
+          }
+$resp = array();
+ if (variable_get('uc_optimal_enable_dim_weights','')){
+    $length = $v->length;
+    $width =$v->width; 
+    $height= $v->height;
+    $pcs =  $length.'|'.$width.'|'.$height .'|'.$weight;
+    $prd = 'P';
+    $gtw = 'US';
+    $json= 'Y';
+    $request = array();
+    $resp = drupal_http_request('https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&pcs='.$pcs.'&prd='.$prd.'&gtw='.$gtw.'&json='.$json);
+  }
+  else{
+    $prd = 'P';
+    $gtw = 'US';
+    $json= 'Y';
+    $request = array();
+    $resp = drupal_http_request('https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&prd='.$prd.'&gtw='.$gtw.'&json='.$json);
+  }
+      $data= drupal_json_decode($resp->data);
+
+  if (isset($data['ratingResponse'])){
+    $totalCharge = $data['ratingResponse']['totalCharge'];
+    $quotes['P']['rate'] += $totalCharge;
+    $quotes['P']['label']= variable_get('uc_optimal_title','Optimal Ship')  . $totalCharge;
+    $quotes['P']['option_label'] = variable_get('uc_optimal_title','Optimal Ship')  .': '.theme('uc_ups_option_label', array('service' => $method['quote']['accessorials'][$key], 'packages' => count($quote)));
+  }
+  else {
+    if (isset($data['errorResponse'])) {
+      unset($quotes['P']['rate']);
+      drupal_set_message($data['errorResponse']['message'],'error');
+    }
+    else{
+      drupal_set_message($resp->data,'error');
+      unset($quotes['P']['rate']);
+    }
+  }
+   }
+   return $quotes;
+}
+
+/**
+ * Convenience function to get Optimal codes for their services.
+ */
+function _uc_optimal_service_list() {
+   return array('P' => t('Express Package'));
+}
+
+// 
+/**
+ * Pseudo-constructor to set default values of a package.
+ */
+function _uc_optimal_new_package() {
+  $package = new stdClass();
+
+  $package->weight = 0;
+  $package->price = 0;
+
+  $package->length = 0;
+  $package->width = 0;
+  $package->height = 0;
+
+  $package->length_units = 'in';
+  $package->weight_units = 'lb';
+  $package->qty = 1;
+  $package->pkg_type = 'P';
+
+  return $package;
+}
