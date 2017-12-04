@@ -131,29 +131,29 @@ function uc_optimal_form_alter(&$form, &$form_state, $form_id) {
     $form['#submit'][] = 'uc_optimal_quote_dis_en';
 
   }
- if (uc_product_is_product_form($form)) {
+if (uc_product_is_product_form($form)) {
     $node = $form['#node'];
 
-    $enabled = variable_get('uc_optimal_enable', array()) + array('optimal' => FALSE);
-    $weight = variable_get('uc_optimal_enable_dim_weights', array()) + array('optimal' => 0);
+    $enabled = variable_get('uc_optimal_enable', array());
+    $weight = variable_get('uc_optimal_enable_dim_weights', array());
 
     $optimal = array(
       '#type' => 'fieldset',
       '#title' => t('Optimal product description'),
       '#collapsible' => TRUE,
-      '#collapsed' => ($enabled['optimal'] == FALSE || uc_product_get_shipping_type($node) != 'small_package'),
-      '#weight' => $weight['optimal'],
+      '#collapsed' => ($enabled == FALSE || uc_product_get_shipping_type($node) != 'small_package'),
+      '#weight' => $weight,
       '#tree' => TRUE,
     );
     $ups['pkg_type'] = array(
       '#type' => 'select',
-      '#title' => t('Package type'),
+      '#title' => t('Optimal Package type'),
       '#options' => _uc_optimal_pkg_types(),
       '#default_value' => isset($node->optimal['pkg_type']) ? $node->optimal['pkg_type'] : variable_get('uc_optimal_pkg_type', 'P'),
     );
 
     $form['shipping']['optimal'] = $ups;
-    if ($enabled['optimal']) {
+    if ($enabled) {
       $form['#validate'][] = 'uc_optimal_product_alter_validate';
     }
   }
@@ -167,7 +167,7 @@ function uc_optimal_form_alter(&$form, &$form_state, $form_id) {
 function uc_optimal_product_alter_validate($form, &$form_state) {
   if (isset($form_state['values']['shippable']) && ($form_state['values']['shipping_type'] == 'small_package' || (empty($form_state['values']['shipping_type']) && variable_get('uc_store_shipping_type', 'small_package') == 'small_package'))) {
     //@todo check here
-    if ($form_state['values']['optimal']['pkg_type'] == 'P' && (empty($form_state['values']['dim_length']) || empty($form_state['values']['dim_width']) || empty($form_state['values']['dim_height']))) {
+    if ($form_state['values']['pkg_type'] == 'P' && (empty($form_state['values']['dim_length']) || empty($form_state['values']['dim_width']) || empty($form_state['values']['dim_height']))) {
       form_set_error('base][dimensions', t('Dimensions are required for custom packaging.'));
     }
   }
