@@ -398,31 +398,48 @@ function uc_optimal_quote($products, $details, $method) {
       $resp = array();
       $pcs ='';
       $wgt = 0;
+      $prd = 'P';
+      $gtw = 'US';
+      $json= 'Y';
+
   foreach($products as $k=>$v){
     // if (count($products) > 1){      
-      $weight=0;
       $quantity = $v->qty;
       $pcs2= '';
-      $weight = 0;
-      for($i=0; $i< $quantity;$i++){
+      if($gtw == 'US' || $gtw == 'PR'){
+        if ($v->weight_units =='kg'){
+                    drupal_set_message($k .'-'.$wgt.'+'.round($v->weight/2.2046).'*'.$quantity);         
+          $wgt = $wgt + round($v->weight/2.2046) * $quantity; 
+        }
+        else{
+          $wgt = $wgt + $v->weight * $quantity; 
+
+        }
+      }
+      else {
+        if ($v->weight_units =='lb'){
+         // $wgt += $wgt + round($v->weight/2.2046) * $quantity;          
+        }
+      }
+      $weight_product = round($v->weight/2.2046) ;
+            for($i=0; $i< $quantity;$i++){
         if (variable_get('uc_optimal_enable_dim_weights','')){
           //if dim_weight is enabled,pass weight and pcs
           $length = $v->length;
           $width =$v->width; 
           $height= $v->height;
-          $pcs2 .=  $length.'|'.$width.'|'.$height .'|'.$weight .';';
-          $prd = 'P';
-          $gtw = 'US';
-          $json= 'Y';
-          $weight = $weight + $v->weight * $quantity;  
+          $dimensional_weight = (($length * $width *$height)/139);
+          drupal_set_message($dimensional_weight.'>'.$weight_product);
+          if($dimensional_weight > $weight_product){
+           $pcs2 .=  $length.'|'.$width.'|'.$height .'|'.$dimensional_weight .';'; 
+          }
+          else{
+            $pcs2 .=  $length.'|'.$width.'|'.$height .'|'.$weight_product .';';
+
+          }
           $query = '';               
         }
-        else{
-          //else pass just the weight
-          $weight = $weight + $v->weight * $quantity;                 
-        }
       }
-          $wgt += $weight;
       $pcs .= $pcs2;    
     //}//end of else of if (count($products) > 1)
     //else {
