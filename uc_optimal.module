@@ -124,6 +124,7 @@ function uc_optimal_quote_dis_en(&$form,&$form_state){
  * @see uc_optimal_product_alter_validate()
  */
 function uc_optimal_form_alter(&$form, &$form_state, $form_id) {
+   
   if($form_id == 'uc_optimal_admin_settings'){
     $form['#submit'][] = 'uc_optimal_dis_en';
   }
@@ -378,8 +379,9 @@ function uc_optimal_quote($products, $details, $method) {
     // Skip this shipping method.
     return array();
   }
-   if (!empty($destination->country) && $destination->country == 840){
-     // Skip this shipping method.
+   // if (!empty($destination->country) && $destination->country == 840){
+   if (!empty($destination->country)){
+    // Skip this shipping method.
     drupal_set_message('International Shipping Only','error');
      return array();
    }
@@ -392,6 +394,13 @@ function uc_optimal_quote($products, $details, $method) {
       ->execute();
       $country_id = $query->fetchAll();
       $dst = $country_id[0]->country_iso_code_2;
+      $country_code = uc_store_default_country();
+      $query = db_select('uc_countries')
+        ->fields('uc_countries')
+        ->condition('country_id',$country_code)
+        ->execute();
+      $country_id = $query->fetchAll();
+      $gtw = $country_id[0]->country_iso_code_2;
       $data = array();
       $pcs = '';
       $url_request = '';
@@ -399,7 +408,6 @@ function uc_optimal_quote($products, $details, $method) {
       $pcs ='';
       $wgt = 0;
       $prd = 'P';
-      $gtw = 'US';
       $json= 'Y';
       $pst = $destination->postal_code;
       $cty = $destination->city;
