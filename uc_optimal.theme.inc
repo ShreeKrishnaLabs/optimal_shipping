@@ -22,17 +22,17 @@ function theme_uc_optimal_option_label($variables) {
   $packages = $variables['packages'];
 
   // Start with logo as required by the Optimal terms of service.
-  $output  = theme('image', array(
-    'path' => drupal_get_path('module', 'uc_optimal') . '/dhl_logo_small.jpg',
-    'alt' => t('Optimal logo'),
-    'attributes' => array(
-       'class' => 'optimal-logo',
-       'style' => 'width: 10%; margin-left: 1%;margin-right: 1%;',
-       ),
-  ));
+//   $output  = theme('image', array(
+//     'path' => drupal_get_path('module', 'uc_optimal') . '/dhl_logo_small.jpg',
+//     'alt' => t('Optimal logo'),
+//     'attributes' => array(
+//        'class' => 'optimal-logo',
+//        'style' => 'width: 10%; margin-left: 1%;margin-right: 1%;',
+//        ),
+//   ));
 
   // Add the Optimal service name.
-  $output .= t('@service Rate', array('@service' => $service));
+  $output = t('@service Rate', array('@service' => $service));
 
   // Add package information
   $output .= ' (' . format_plural(count($packages), '1 package', '@count packages') . ')';
