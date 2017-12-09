@@ -382,11 +382,10 @@ function uc_optimal_quote($products, $details, $method) {
     return array();
   }
    // if (!empty($destination->country) && $destination->country == 840){
-   if (!empty($destination->country)){
-    // Skip this shipping method.
-    drupal_set_message('International Shipping Only','error');
-     return array();
-   }
+   //  // Skip this shipping method.
+   //  // drupal_set_message('International Shipping Only','error');
+   //   return array();
+   // }
       $acc = variable_get('uc_optimal_acc','');
           // logic of converting country codes from drupal and merging into DHL list 
 
