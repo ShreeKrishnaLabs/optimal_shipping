@@ -401,6 +401,11 @@ function uc_optimal_quote($products, $details, $method) {
       $prd = 'P';
       $gtw = 'US';
       $json= 'Y';
+      $pst = $destination->postal_code;
+      $cty = $destination->city;
+
+      drupal_set_message($pst);
+      drupal_set_message($cty);
 
   foreach($products as $k=>$v){
     // if (count($products) > 1){      
@@ -408,20 +413,29 @@ function uc_optimal_quote($products, $details, $method) {
       $pcs2= '';
       if($gtw == 'US' || $gtw == 'PR'){
         if ($v->weight_units =='kg'){
-                    drupal_set_message($k .'-'.$wgt.'+'.round($v->weight/2.2046).'*'.$quantity);         
-          $wgt = $wgt + round($v->weight/2.2046) * $quantity; 
+          //convert to LBS
+                    drupal_set_message($k .'-'.$wgt.'+'.round($v->weight*2.2046).'*'.$quantity);         
+          $wgt = $wgt + round($v->weight*2.2046) * $quantity; 
+          $weight_product = round($v->weight*2.2046) ;
         }
         else{
+          // leave as LBS
           $wgt = $wgt + $v->weight * $quantity; 
-
+          $weight_product = $v->weight;
         }
       }
       else {
         if ($v->weight_units =='lb'){
+
+          // convert to KGS
+          $weight_product = round($v->weight/2.2046);
          // $wgt += $wgt + round($v->weight/2.2046) * $quantity;          
         }
+        else{
+          $weight_product = round($v->weight);
+        }
       }
-      $weight_product = round($v->weight/2.2046) ;
+      // $weight_product = round($v->weight/2.2046) ;
             for($i=0; $i< $quantity;$i++){
         if (variable_get('uc_optimal_enable_dim_weights','')){
           //if dim_weight is enabled,pass weight and pcs
@@ -451,11 +465,11 @@ function uc_optimal_quote($products, $details, $method) {
   
   }
      if (variable_get('uc_optimal_enable_dim_weights','')){
-       $url_request='https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&pcs='.$pcs.'&prd='.$prd.'&gtw='.$gtw.'&json='.$json;
+       $url_request='https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&pcs='.$pcs.'&prd='.$prd.'&gtw='.$gtw.'&cty='. $cty . '&pst=' . $pst.'&json='.$json;
        drupal_set_message($url_request.'pcs' );
      }
      else {
-       $url_request='https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&wgt='.$wgt.'&prd='.$prd.'&gtw='.$gtw.'&json='.$json;
+       $url_request='https://www.optimalship.com/rates/rates.php?acc='.$acc.'&dst='.$dst.'&wgt='.$wgt.'&prd='.$prd.'&gtw='.$gtw.'&cty='. $cty . '&pst=' . $pst . '&json='.$json;
        drupal_set_message($url_request .'wgt' );       
      }
    $resp = drupal_http_request($url_request);
